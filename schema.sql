@@ -25,7 +25,8 @@ DO INSTEAD NOTHING;
 CREATE TABLE soccerdome.games (
   game_id SERIAL PRIMARY KEY,
   league_id INTEGER,
-  game_date DATE,
+  game_date TIMESTAMP WITH TIME ZONE,
+  complete BOOLEAN,
   home_team INTEGER,
   away_team INTEGER,
   home_score INTEGER,
@@ -38,6 +39,15 @@ CREATE TABLE soccerdome.games (
 CREATE INDEX ON soccerdome.games(home_team);
 CREATE INDEX ON soccerdome.games(away_team);
 CREATE INDEX ON soccerdome.games(game_date);
+CREATE UNIQUE INDEX ON soccerdome.games(game_date, home_team, away_team);
+
+CREATE RULE games_update_duplicates AS
+ON INSERT TO soccerdome.games
+WHERE EXISTS (SELECT 1 FROM soccerdome.games WHERE game_date = NEW.game_date AND home_team = NEW.home_team AND away_team = NEW.away_team)
+DO INSTEAD
+UPDATE soccerdome.games
+  SET complete = NEW.complete, home_score = NEW.home_score, away_score = NEW.away_score
+  WHERE game_date = NEW.game_date AND home_team = NEW.home_team AND away_team = NEW.away_team;
 
 CREATE TABLE soccerdome.elo_ratings (
   rating_id SERIAL PRIMARY KEY,

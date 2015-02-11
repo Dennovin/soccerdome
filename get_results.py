@@ -1,24 +1,36 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+from Config import Config
+
 from bs4 import BeautifulSoup
-from datetime import date, timedelta
+import datetime
 import psycopg2
+import pytz
 import re
 import requests
 import sys
 
-current_date = date.today() - timedelta(days=date.today().isoweekday())
-
-conn = psycopg2.connect(database="vagrant")
+db_opts = Config.get("db_opts")
+conn = psycopg2.connect(**db_opts)
 cursor = conn.cursor()
+
+current_date = datetime.date.today() - datetime.timedelta(days=datetime.date.today().isoweekday())
 failures = 0
 
-cursor.execute("SELECT MAX(game_date) FROM soccerdome.games")
+cursor.execute("SELECT DATE_TRUNC('day', game_date) FROM soccerdome.games GROUP BY 1 HAVING bool_and(complete) ORDER BY 1 DESC LIMIT 1")
 row = cursor.fetchone()
-max_date_in_db = row[0]
 
-while current_date > max_date_in_db:
+if row is None:
+    current_date = datetime.date(2013, 01, 20)
+else:
+    current_date = row[0]
+
+tz = pytz.timezone("US/Eastern")
+
+while True:
+    current_date += datetime.timedelta(days=7)
+
     print "Getting results for {:%Y-%m-%d}...".format(current_date)
 
     url = "http://soccerdome-2.ezleagues.ezfacility.com/schedule.aspx?facility_id=50&d={:%m/%d/%Y}".format(current_date)
@@ -28,8 +40,6 @@ while current_date > max_date_in_db:
 
     if table.find("tr", class_="EmptyDataRowStyle"):
         failures += 1
-        current_date -= timedelta(days=7)
-
         if failures >= 5:
             print "No data for the last 5 weeks. Exiting."
             break
@@ -57,24 +67,34 @@ while current_date > max_date_in_db:
         home_team = unicode(cells[3].get_text().strip())
         score = cells[2].get_text().strip()
 
-        m = re.match("(\d+)\s*\-\s*(\d+)", score)
-        if m is None:
-            continue
+        complete = False
+        home_score = None
+        away_score = None
 
-        away_score = m.group(1)
-        home_score = m.group(2)
+        m = re.match("(\d+)\s*\-\s*(\d+)", score)
+        if m is not None:
+            away_score = m.group(1)
+            home_score = m.group(2)
+            complete = True
+
+        try:
+            game_time = datetime.datetime.strptime(cells[4].get_text().strip(), "%I:%M %p").time()
+        except ValueError:
+            game_time = datetime.time(0, 0)
+
+        game_dt = tz.localize(datetime.datetime.combine(current_date, game_time))
 
         cursor.execute("INSERT INTO soccerdome.leagues(league_id, league_name) VALUES(%s, %s)", [league_id, league_name])
         cursor.execute("INSERT INTO soccerdome.teams(team_name) VALUES (%s), (%s)", [away_team, home_team])
 
         cursor.execute("""
-                       INSERT INTO soccerdome.games(league_id, game_date, home_team, home_score, away_team, away_score)
-                       SELECT %s, %s, h.team_id, %s, a.team_id, %s
+                       INSERT INTO soccerdome.games(league_id, game_date, complete, home_team, home_score, away_team, away_score)
+                       SELECT %s, %s, %s, h.team_id, %s, a.team_id, %s
                        FROM soccerdome.teams h, soccerdome.teams a
                        WHERE h.team_name = %s AND a.team_name = %s
                        """,
-                       [league_id, current_date, home_score, away_score, home_team, away_team])
+                       [league_id, game_dt, complete, home_score, away_score, home_team, away_team])
 
     conn.commit()
-    current_date -= timedelta(days=7)
+
 
