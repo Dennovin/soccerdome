@@ -1,9 +1,12 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+from Config import Config
+
 import psycopg2
 
-conn = psycopg2.connect(database="vagrant")
+db_opts = Config.get("db_opts")
+conn = psycopg2.connect(**db_opts)
 cursor = conn.cursor()
 
 duplicates = {
@@ -27,11 +30,13 @@ duplicates = {
     "We're Not Very Good": [ "We're Not Verry Good" ],
     "Trivets": [ "trivest" ],
     "Joga Bonito": [ "Yoga Bonito" ],
+    "FC Spartans": [ "Spartans FC", "Saprtans FC" ],
     }
 
 for real_name, bad_spellings in duplicates.items():
     placeholders = ",".join(["%s" for i in bad_spellings])
 
+    cursor.execute("""DELETE FROM soccerdome.elo_ratings WHERE team_id IN (SELECT team_id FROM soccerdome.teams WHERE team_name IN ({}))""".format(placeholders), bad_spellings)
     cursor.execute("""UPDATE soccerdome.games SET home_team = (SELECT team_id FROM soccerdome.teams WHERE team_name = %s)
                         WHERE home_team IN (SELECT team_id FROM soccerdome.teams WHERE team_name IN ({}))""".format(placeholders),
                    [real_name] + bad_spellings)
