@@ -1,11 +1,14 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+from Config import Config
+
 from datetime import date, timedelta
 import psycopg2
 import sys
 
-conn = psycopg2.connect(database="vagrant")
+db_opts = Config.get("db_opts")
+conn = psycopg2.connect(**db_opts)
 cursor = conn.cursor()
 
 teams = {}
@@ -15,7 +18,7 @@ cursor.execute("SELECT team_id, team_name FROM soccerdome.teams")
 for row in cursor.fetchall():
     teams[row[0]] = {"name": row[1], "elo": 1000, "games": 0}
 
-cursor.execute("SELECT game_id, home_team, home_score, away_team, away_score FROM soccerdome.games ORDER BY game_date")
+cursor.execute("SELECT game_id, home_team, home_score, away_team, away_score FROM soccerdome.games WHERE complete ORDER BY game_date")
 for row in cursor.fetchall():
     home_team = teams[row[1]]
     away_team = teams[row[3]]
