@@ -1,0 +1,27 @@
+---
+- hosts: all
+  sudo: yes
+
+  tasks:
+  - lineinfile: state=present create=yes dest=/etc/apt/apt.conf.d/01proxy line='Acquire::http::Proxy "http://leviathan:3142";'
+  - file: path=/etc/apt/apt.conf.d/01proxy owner=root group=root mode=0644
+  - lineinfile: state=present dest=/etc/hosts line='192.168.121.1 leviathan'
+
+  - apt: name={{ item }} state=latest update_cache=yes cache_valid_time=3600
+    with_items:
+    - python
+    - python-dev
+    - python-pip
+    - python-requests
+    - python-bs4
+    - postgresql-9.3
+    - postgresql-server-dev-9.3
+    - tmux
+
+  - pip: requirements=/vagrant/requirements.txt
+  - postgresql_user: name=vagrant
+    sudo_user: postgres
+  - postgresql_db: name=soccerdome owner=vagrant encoding="UTF-8"
+    sudo_user: postgres
+  - postgresql_privs: db=soccerdome state=present roles=vagrant type=database privs=all
+    sudo_user: postgres
